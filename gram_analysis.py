@@ -5,8 +5,11 @@ from nltk.tokenize import word_tokenize
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import re
+import statistics
+import language_tool_python
 
 
+np.random.seed(2024)
 import nltk
 nltk.download('punkt_tab')
 stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 
@@ -101,6 +104,84 @@ def write_results_to_file(prompt_name, metrics, grade_dist_df):
     # need to write 
     return 
 
+
+def addFeatures(df):
+    
+    connectives =  [
+    "after",
+    "earlier", 
+    "before",
+    "during",
+    "while",
+    "later",
+    "because",
+    "consequently",
+    "thus",
+    "both",
+    "additionally",
+    "furthermore",
+    "moreover",
+    "actually",
+    "as a result",
+    "due to",
+    "but",
+    "yet",
+    "however",
+    "although",
+    "nevertheless"
+]
+    tool = language_tool_python.LanguageTool('en-US')
+
+    def get_features(text, index=None, total=None):
+        if isinstance(index, tuple):
+            index = index[0]
+        if index is not None and total is not None:
+            if index % 100 == 0:
+                print(f"Processing essay {index}/{total} ({(index/total*100):.1f}%)")
+
+        text = str(text)  
+        sentences = re.split(r'[.!?]+(?=\s+|$)', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        words = re.findall(r'\b\w+\b', text.lower())
+        
+        avg_sentence_length = len(words) / len(sentences) if sentences else 0
+        avg_word_length = statistics.mean([len(word) for word in words]) if words else 0
+        num_commas = text.count(',')
+        num_periods = text.count('.')
+        num_semicolons = text.count(';')
+        num_exclamations = text.count('!')
+        num_questions = text.count('?')
+        
+        text_lower = text.lower()
+        num_connectives = sum(text_lower.count(conn.lower()) for conn in connectives)
+        matches = tool.check(text)
+        spelling_errors = sum(1 for match in matches if match.ruleId.startswith('MORFOLOGIK_'))
+        grammar_errors = len(matches) - spelling_errors
+        return {
+            'avg_sentence_length': round(avg_sentence_length, 2),
+            'avg_word_length': round(avg_word_length, 2),
+            'num_commas': num_commas,
+            'num_periods': num_periods,
+            'num_semicolons': num_semicolons,
+            'num_exclamations': num_exclamations,
+            'num_questions': num_questions,
+            'num_connectives': num_connectives,
+            'num_spelling_errors': spelling_errors,
+            'num_grammar_errors': grammar_errors
+        }
+
+    total_essays = len( df)
+    features = df['full_text'].reset_index().apply(
+    lambda row: get_features(row['full_text'], row.name, total_essays), 
+    axis=1
+)
+
+    for feature_name in features.iloc[0].keys():
+        df[feature_name] = features.apply(lambda x: x[feature_name])
+
+    return df
+
 def main():
     df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
 
@@ -110,15 +191,16 @@ def main():
     Hyper parameters to experiment with:
     '''
     alambda = 1 # Strengthen or weakens std dev when calculating z-scores.
-    n = 1000 # Number of top bi grams to consider
+    n = 500 # Number of top bi grams to consider
 
     for prompt in prompts:
+        
         print(f'\nAnalyzing prompt: {prompt}')
 
         train_df = df[df['prompt_name'] == prompt].copy()
 
         # Extract top 1000 bigrams from all essays
-        top_bigrams = extract_top_bigrams(train_df['full_text'], n=1000)
+        top_bigrams = extract_top_bigrams(train_df['full_text'], n=n)
         
                # Calculate similarity scores for test data
         similarity_scores = []
@@ -129,6 +211,8 @@ def main():
             similarity_scores.append(similarity)
         
         similarity_scores = np.array(similarity_scores)
+        df.loc[df['prompt_name'] == prompt, 'similarity_score'] = similarity_scores
+        
         
         # Assign and evaluate grades
         predicted_grades = assign_grades_on_bell_curve(similarity_scores, alambda)
@@ -149,7 +233,12 @@ def main():
             'Actual': pd.Series(actual_grades).value_counts().sort_index()
         }))
 
-        # write_results_to_file(prompt, metrics, grade_dist)
+        write_results_to_file(prompt, metrics, grade_dist)
+
+    # df = addFeatures(df)
+    # csv_path = "FeaturesAdded.csv"
+    # df.to_csv(csv_path, index=False)
+    # print(f"DataFrame saved to CSV: {csv_path}")
 
 
 if __name__ == "__main__":
