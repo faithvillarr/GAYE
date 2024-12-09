@@ -7,6 +7,11 @@ from collections import Counter
 from nltk.tokenize import word_tokenize
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import re
+from sklearn.preprocessing import LabelEncoder
+import random
+import statistics
+import language_tool_python
+
 
 """ Logistic Regression Analysis"""
 from sklearn.model_selection import train_test_split
@@ -17,6 +22,9 @@ from sklearn.metrics import classification_report
 """ K_Nearest Neighbor Analysis"""
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix
+
+import warnings
+warnings.filterwarnings('ignore')
 
 
 stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 
@@ -35,11 +43,80 @@ stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours',
                 'hadn', "hadn't", 'hasn', "hasn't", 'haven', "haven't", 'isn', "isn't", 'ma', 'mightn',
                 "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan', "shan't", 'shouldn', "shouldn't", 
                 'wasn', "wasn't", 'weren', "weren't", 'won', "won't", 'wouldn', "wouldn't"]
-import numpy as np
-from sklearn.metrics import accuracy_score
+def addFeatures(df):
+    
+    connectives =  [
+    "after",
+    "earlier", 
+    "before",
+    "during",
+    "while",
+    "later",
+    "because",
+    "consequently",
+    "thus",
+    "both",
+    "additionally",
+    "furthermore",
+    "moreover",
+    "actually",
+    "as a result",
+    "due to",
+    "but",
+    "yet",
+    "however",
+    "although",
+    "nevertheless"
+]
+    tool = language_tool_python.LanguageTool('en-US')
+    def get_features(text, index=None, total=None):
+        if isinstance(index, tuple):
+            index = index[0]
+        if index is not None and total is not None:
+            if index % 100 == 0:
+                print(f"Processing essay {index}/{total} ({(index/total*100):.1f}%)")
+        text = str(text)  
+        sentences = re.split(r'[.!?]+(?=\s+|$)', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        words = re.findall(r'\b\w+\b', text.lower())
+        
+        avg_sentence_length = len(words) / len(sentences) if sentences else 0
+        avg_word_length = statistics.mean([len(word) for word in words]) if words else 0
+        num_commas = text.count(',')
+        num_periods = text.count('.')
+        num_semicolons = text.count(';')
+        num_exclamations = text.count('!')
+        num_questions = text.count('?')
+        
+        text_lower = text.lower()
+        num_connectives = sum(text_lower.count(conn.lower()) for conn in connectives)
+        matches = tool.check(text)
+        spelling_errors = sum(1 for match in matches if match.ruleId.startswith('MORFOLOGIK_'))
+        grammar_errors = len(matches) - spelling_errors
+        return {
+            'avg_sentence_length': round(avg_sentence_length, 2),
+            'avg_word_length': round(avg_word_length, 2),
+            'num_commas': num_commas,
+            'num_periods': num_periods,
+            'num_semicolons': num_semicolons,
+            'num_exclamations': num_exclamations,
+            'num_questions': num_questions,
+            'num_connectives': num_connectives,
+            'num_spelling_errors': spelling_errors,
+            'num_grammar_errors': grammar_errors
+        }
+    total_essays = len( df)
+    features = df['full_text'].reset_index().apply(
+    lambda row: get_features(row['full_text'], row.name, total_essays), 
+    axis=1
+)
+    for feature_name in features.iloc[0].keys():
+        df[feature_name] = features.apply(lambda x: x[feature_name])
+    return df
 
-def fill_na(df):
 
+def fill_nan(df):
     df.dropna(subset=['full_text'], inplace=True) #drops rows without "full_text" 
 
     for idx in df.index: #fill in empty essay_word_count
@@ -120,46 +197,10 @@ def fill_na(df):
     return df
 
 
-def weighted_accuracy(y_true, y_pred, weights=None):
-
-    # If no weights provided, use uniform weights
-    if weights is None:
-        return accuracy_score(y_true, y_pred)
-    
-    # Convert to numpy arrays
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-    
-    # Create weight array matching the true labels
-    sample_weights = np.array([weights[label] for label in y_true])
-    
-    # Calculate weighted accuracy
-    correct = (y_true == y_pred)
-    return np.sum(correct * sample_weights) / np.sum(sample_weights)
-
-
 def calculate_qwk(y_true, y_pred, n_classes):
-    """
-    Calculate Quadratic Weighted Kappa between true labels and predictions.
-    Handles edge cases and prevents division by zero errors.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True labels
-    y_pred : array-like
-        Predicted labels
-    n_classes : int
-        Number of classes in the dataset
-        
-    Returns:
-    --------
-    float
-        Quadratic Weighted Kappa score
-    """
     # Convert inputs to numpy arrays if they aren't already
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
+    y_true = np.asarray(y_true) - 1  # Shift class labels to start from 0
+    y_pred = np.asarray(y_pred) - 1  # Shift class labels to start from 0
     
     # Validate inputs
     if len(y_true) != len(y_pred):
@@ -167,15 +208,15 @@ def calculate_qwk(y_true, y_pred, n_classes):
     if len(y_true) == 0:
         raise ValueError("Arrays cannot be empty")
     
-    # Create confusion matrix
+    # Create confusion matrix with adjusted labels
     conf_mat = confusion_matrix(y_true, y_pred, 
-                              labels=list(range(n_classes)))
+                              labels=list(range(n_classes-1)))  # Adjust range
     
     # Create weight matrix
-    weights = np.zeros((n_classes, n_classes))
-    for i in range(n_classes):
-        for j in range(n_classes):
-            weights[i,j] = (i-j) ** 2
+    weights = np.zeros((n_classes-1, n_classes-1))
+    for i in range(n_classes-1):
+        for j in range(n_classes-1):
+            weights[i,j] = ((i+1)-(j+1)) ** 2  # Adjust weight calculation
     
     # Calculate row and column sums
     row_sums = conf_mat.sum(axis=1)
@@ -282,20 +323,54 @@ def write_results_to_file(prompt_name, metrics, grade_dist_df):
     # need to write 
     return 
 
+def weighted_accuracy(y_true, y_pred, weights=None):
+
+    # If no weights provided, use uniform weights
+    if weights is None:
+        return accuracy_score(y_true, y_pred)
+    
+    # Convert to numpy arrays
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    # Create weight array matching the true labels
+    sample_weights = np.array([weights[label] for label in y_true])
+    
+    # Calculate weighted accuracy
+    correct = (y_true == y_pred)
+    return np.sum(correct * sample_weights) / np.sum(sample_weights)
+
 from datetime import datetime
 def main():
+    # df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
     df = pd.read_csv("FeaturesAdded.csv")
     print(f"There are {df.isna().any(axis=1).sum()} rows with nan")
-    df = fill_na(df)
+    df = fill_nan(df)
+
+    le = LabelEncoder() #encodes the target variable
+
+    toEncode = ['assignment', 'prompt_name', "economically_disadvantaged", 'student_disability_status', 'ell_status', 'race_ethnicity', 'gender'] 
+
+    for item in toEncode:
+        # print(item)
+        # print(df)
+        df[item] = le.fit_transform(df[item])
+
+    # print(f"\n{item} mapping:") #prints out what category converted to what integer
+    # for i, label in enumerate(le.classes_):
+    #     print(f"{i} -> {label}")
+
 
     prompts = df['prompt_name'].unique()
+    prompts.sort()
+    # print(prompts)
 
     '''
     Select Analysis Type
     '''
-    bell_curve =    False
-    log_reg =       True
-    kNear =         False
+    bell_curve = False
+    log_reg = True
+    kNear = False
     embedding = False
     neural_net = False
 
@@ -348,17 +423,24 @@ def main():
             train_df = train_df.drop(columns=columns_to_drop)
             
             # Stack sim scores and word count
-            prompt_arr = np.column_stack((
-                similarity_scores, 
-                np.array(train_df)
-                
-                ))
-            print(pd.DataFrame(prompt_arr).columns)
-            x_train, x_test, y_train, y_test = train_test_split(prompt_arr, 
-                                                                train_df['score'], 
-                                                                test_size=test_size, 
-                                                                random_state=42,
-                                                                stratify=train_df['score'])
+            prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+            
+
+            df_subset = df[df['prompt_name'] == prompt]
+
+            # Then create X and y from the subset
+            X = df_subset.drop(['essay_id', 'score', 'full_text'], axis=1)
+            y = df_subset['score']
+            x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42)
+
+            class_counts = y_train.value_counts()
+            total_samples = len(y_train)
+
+            # Calculate weights inversely proportional to class frequencies
+            class_weights = {
+                label: total_samples / (len(class_counts) * count) 
+                for label, count in class_counts.items()
+            }
             '''
             Bell Curve Analysis and performance
             '''
@@ -384,6 +466,13 @@ def main():
                 print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 # Stack sim scores and word count
+                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+                # X = df.drop('score', axis=1)
+                # y = df['score']
+                # x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42)
+                #  Due to the bell-curved nature of our dataset, we use balanced 
+                #   weight classes to make prediction of minority classes more likely. 
+                model = LogisticRegression(class_weight=class_weights,     
                 # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
                 prompt_arr = train_df
                 x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
@@ -400,11 +489,15 @@ def main():
                                         solver=solver_lgreg,
                                         max_iter=3000,
                                         penalty="l1")
+                                        max_iter=3000,
+                                        penalty="l1")
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
-                # qwk_score = calculate_qwk(y_test, y_pred, n_classes=5)
+
+                # qwk_score = calculate_qwk(y_test, y_pred, n_classes=7)
                 # print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
+
 
                 weighted_acc = weighted_accuracy(y_test, y_pred, weights=class_weights)
                 print(f"Weighted Accuracy: {weighted_acc:.4f}")
@@ -424,6 +517,12 @@ def main():
                 # probabilities = model.predict_proba(x_test)
                 # file.write(f"Class Probabilities:\n{probabilities[:5]}")
 
+                # Evaluate accuracy
+                accuracy = accuracy_score(y_test, y_pred, )
+                file.write(f"Accuracy: {accuracy}")
+
+                weighted_acc = weighted_accuracy(y_test, y_pred, weights=class_weights)
+                print(f"Weighted Accuracy: {weighted_acc:.4f}")
                 # # Evaluate accuracy
                 # accuracy = accuracy_score(y_test, y_pred)
                 # file.write(f"Accuracy: {accuracy}")
