@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import pandas as pd
 import numpy as np
 from collections import Counter
@@ -112,16 +115,16 @@ def write_results_to_file(prompt_name, metrics, grade_dist_df):
 
 from datetime import datetime
 def main():
-    df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
+    df = pd.read_csv("FeaturesAdded.csv")
 
     prompts = df['prompt_name'].unique()
 
     '''
     Select Analysis Type
     '''
-    bell_curve = False
-    log_reg = False
-    kNear = True
+    bell_curve =    True
+    log_reg =       True
+    kNear =         True
     embedding = False
     neural_net = False
 
@@ -139,9 +142,10 @@ def main():
     with open("results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
 
         for prompt in prompts[pd.notna(prompts)]:
-            file.write(f'\nAnalyzing prompt: {prompt}')
+            file.write(f'\n==============\nAnalyzing prompt: {prompt}==============')
 
             train_df = df[df['prompt_name'] == prompt].copy()
+
 
             # Extract top 1000 bigrams from all essays
             top_bigrams = extract_top_bigrams(train_df['full_text'], n=n)
@@ -156,31 +160,57 @@ def main():
             
             # converting to np array for them juicy easy functions. thank go for numpy
             similarity_scores = np.array(similarity_scores) 
+
+            # Drop variables that score not be found from full_text
+            columns_to_drop = [
+                "essay_id",
+                "full_text",
+                "assignment",
+                "prompt_name",
+                "economically_disadvantaged",
+                "student_disability_status",
+                "ell_status",
+                "race_ethnicity",
+                "gender",
+                "grade_level"
+            ]
+            train_df = train_df.drop(columns=columns_to_drop)
             
             # Stack sim scores and word count
-            prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-            x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
+            prompt_arr = np.column_stack((
+                similarity_scores, 
+                np.array(train_df)
+                
+                ))
+            print(pd.DataFrame(prompt_arr).columns)
+            x_train, x_test, y_train, y_test = train_test_split(prompt_arr, 
+                                                                train_df['score'], 
+                                                                test_size=test_size, 
+                                                                random_state=42,
+                                                                stratify=train_df['score'])
             '''
             Bell Curve Analysis and performance
             '''
             if bell_curve: 
-                print("\n\n--- Bell Curve Analysis ---\n")
+                print(f"Conducting bell curve analysis for prompt: {prompt}")
+                file.write("\n\n--- Bell Curve Analysis ---\n")
                 predicted_grades = assign_grades_on_bell_curve(similarity_scores, alambda)
                 actual_grades = train_df['score'].values
 
                 metrics = evaluate_model(predicted_grades, actual_grades)
-                print("Evaluation Metrics:")
+                file.write("Evaluation Metrics:\n")
                 for metric, value in metrics.items():
-                    print(f"{metric}: {value:.4f}")
-                print("\nGrade Distribution:")
-                print(pd.DataFrame({
+                    file.write(f"{metric}: {value:.4f}\n")
+                file.write("\nGrade Distribution:")
+                file.write(pd.DataFrame({
                     'Predicted': pd.Series(predicted_grades).value_counts().sort_index(),
                     'Actual': pd.Series(actual_grades).value_counts().sort_index()
-                }))
+                }).to_string())
             '''
-            Linear Regression Model
+            Logistic Regression Model
             '''
             if log_reg:
+                print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 #  Due to the bell-curved nature of our dataset, we use balanced 
                 #   weight classes to make prediction of minority classes more likely. 
@@ -191,26 +221,49 @@ def main():
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
-                probabilities = model.predict_proba(x_test)
-                file.write(f"Class Probabilities:\n{probabilities[:5]}")
+                metrics = evaluate_model(y_pred, y_test)
+                file.write("Evaluation Metrics:\n")
+                for metric, value in metrics.items():
+                    file.write(f"{metric}: {value:.4f}\n")
 
-                # Evaluate accuracy
-                accuracy = accuracy_score(y_test, y_pred)
-                file.write(f"Accuracy: {accuracy}")
+                file.write("\nGrade Distribution:")
+                file.write(pd.DataFrame({
+                    'Predicted': pd.Series(y_pred).value_counts().sort_index(),
+                    'Actual': pd.Series(y_test).value_counts().sort_index()
+                }).to_string())
 
-                # Classification report
-                file.write("Classification Report:")
-                file.write(classification_report(y_test, y_pred))
+                # probabilities = model.predict_proba(x_test)
+                # file.write(f"Class Probabilities:\n{probabilities[:5]}")
+
+                # # Evaluate accuracy
+                # accuracy = accuracy_score(y_test, y_pred)
+                # file.write(f"Accuracy: {accuracy}")
+
+                # # Classification report
+                # file.write("Classification Report:")
+                # file.write(classification_report(y_test, y_pred))
             '''
             K-Nearest Neighbors
             '''
             if kNear:
+                print(f"Conducting k-nearest neighbor analysis for prompt: {prompt}")
                 file.write("\n--- K Nearest Neighbor Analysis ---\n")
                 knn = KNeighborsClassifier(n_neighbors=6, metric=knnmetric)
                 knn.fit(x_train, y_train)
                 y_pred = knn.predict(x_test)
                 # print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
-                file.write(f"\nClassification Report:\n {classification_report(y_test, y_pred)}")
+                # file.write(f"\nClassification Report:\n {classification_report(y_test, y_pred)}")
+
+                metrics = evaluate_model(y_pred, y_test)
+                file.write("Evaluation Metrics:\n")
+                for metric, value in metrics.items():
+                    file.write(f"{metric}: {value:.4f}\n")
+
+                file.write("\nGrade Distribution:")
+                file.write(pd.DataFrame({
+                    'Predicted': pd.Series(y_pred).value_counts().sort_index(),
+                    'Actual': pd.Series(y_test).value_counts().sort_index()
+                }).to_string())
 
 
 
