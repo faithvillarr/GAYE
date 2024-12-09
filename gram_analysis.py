@@ -35,6 +35,107 @@ stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours',
                 'hadn', "hadn't", 'hasn', "hasn't", 'haven', "haven't", 'isn', "isn't", 'ma', 'mightn',
                 "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan', "shan't", 'shouldn', "shouldn't", 
                 'wasn', "wasn't", 'weren', "weren't", 'won', "won't", 'wouldn', "wouldn't"]
+import numpy as np
+from sklearn.metrics import accuracy_score
+
+def fill_na(df):
+
+    df.dropna(subset=['full_text'], inplace=True) #drops rows without "full_text" 
+
+    for idx in df.index: #fill in empty essay_word_count
+        if pd.isna(df.loc[idx, 'essay_word_count']):
+            df.loc[idx, 'essay_word_count'] = len(str(df.loc[idx, 'full_text']).split())
+
+
+
+    def sameAsAboveBelow(feature, idx): #manually checked that idx = 0 and idx = len(df) are complete rows, so don't need to consider this case
+        return df[feature].iloc[idx-1] == df[feature].iloc[idx+1]
+
+    mask = df['assignment'].notna()
+    df.loc[mask] = df.loc[mask].sort_values(by='assignment') #sorts by "assignment", but leaves rows with a blank assignment where they are. VERIFIED 
+
+    missing_indices = df[df["assignment"].isna()].index
+    for idx in missing_indices.sort_values():
+        if sameAsAboveBelow("assignment", idx):
+            df.loc[idx, "assignment"] = df["assignment"].iloc[idx-1] #function returned True, take the value from the row above
+        else:
+            if pd.isna(df.loc[idx, "prompt_name"]): #prompt_name doesn't exist either, default to row above
+                df.loc[idx, "assignment"] = df["assignment"].iloc[idx-1]
+                df.loc[idx, "prompt_name"] = df["prompt_name"].iloc[idx-1]
+
+            else: #prompt_name exists
+                if df.loc[idx, "prompt_name"] == df["prompt_name"].iloc[idx+1]: #matches row below, copy its data
+                    df.loc[idx, "assignment"] = df["assignment"].iloc[idx+1]
+                else:
+                    df.loc[idx, "assignment"] = df["assignment"].iloc[idx-1] #matches row above (or row below doesn't exist), use row above
+
+
+
+    mask = df['prompt_name'].notna()
+    df.loc[mask] = df.loc[mask].sort_values(by='prompt_name') #sorts by "assignment", but leaves rows with a blank assignment where they are.
+
+
+    missing_indices = df[df["prompt_name"].isna()].index #do the same first check as we did for "assignment"
+    for idx in missing_indices.sort_values():
+        if sameAsAboveBelow("prompt_name", idx):
+            df.loc[idx, "prompt_name"] = df["prompt_name"].iloc[idx-1]
+
+
+    mask = df['grade_level'].notna()
+    df.loc[mask] = df.loc[mask].sort_values(by='grade_level')# must sort by grade first for the rule to work properly
+
+    missing_indices = df[df["grade_level"].isna()].index
+    for idx in missing_indices.sort_values():
+        df.loc[idx, "grade_level"] = df["grade_level"].iloc[idx-1] #default to the row above
+                    
+
+
+    featuresToCheck = [ 
+        ("economically_disadvantaged","Economically disadvantaged", "Economically disadvantaged"),
+        ("student_disability_status","Identified as having disability", "Not identified as having disability"),
+        ("ell_status", "Yes", "No"),
+        ("gender", 'M', 'F')
+        ] #feautre, option1, option2 
+
+    #I could just encode these categories right now to save time and lines of code, but I worry we may want to see the whole dataset again before any encoding
+    for feature, option1, option2 in featuresToCheck:
+        missing_indices = df[df[feature].isna()].index
+        for idx in missing_indices.sort_values():
+            if random.choice([True, False]):
+                df.loc[idx, feature] = option1
+            else:
+                df.loc[idx, feature] = option2
+
+
+    uniqueRaceEthnicity = [x for x in df['race_ethnicity'].unique() if not pd.isna(x)] 
+
+    missing_indices = df[df["race_ethnicity"].isna()].index
+    for idx in missing_indices.sort_values():
+        df.loc[idx, "race_ethnicity"] = random.choice(uniqueRaceEthnicity) #fill in the cell with a random race_ethnicity
+
+
+    df.dropna(inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    print(f"There are now {df.isna().any(axis=1).sum()} rows with nan")
+    return df
+
+
+def weighted_accuracy(y_true, y_pred, weights=None):
+
+    # If no weights provided, use uniform weights
+    if weights is None:
+        return accuracy_score(y_true, y_pred)
+    
+    # Convert to numpy arrays
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    # Create weight array matching the true labels
+    sample_weights = np.array([weights[label] for label in y_true])
+    
+    # Calculate weighted accuracy
+    correct = (y_true == y_pred)
+    return np.sum(correct * sample_weights) / np.sum(sample_weights)
 
 
 def calculate_qwk(y_true, y_pred, n_classes):
@@ -184,15 +285,17 @@ def write_results_to_file(prompt_name, metrics, grade_dist_df):
 from datetime import datetime
 def main():
     df = pd.read_csv("FeaturesAdded.csv")
+    print(f"There are {df.isna().any(axis=1).sum()} rows with nan")
+    df = fill_na(df)
 
     prompts = df['prompt_name'].unique()
 
     '''
     Select Analysis Type
     '''
-    bell_curve =    True
+    bell_curve =    False
     log_reg =       True
-    kNear =         True
+    kNear =         False
     embedding = False
     neural_net = False
 
@@ -235,12 +338,12 @@ def main():
                 "full_text",
                 "assignment",
                 "prompt_name",
-                "economically_disadvantaged",
-                "student_disability_status",
-                "ell_status",
-                "race_ethnicity",
-                "gender",
-                "grade_level"
+                # "economically_disadvantaged",
+                # "student_disability_status",
+                # "ell_status",
+                # "race_ethnicity",
+                # "gender",
+                # "grade_level"
             ]
             train_df = train_df.drop(columns=columns_to_drop)
             
@@ -281,19 +384,31 @@ def main():
                 print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 # Stack sim scores and word count
-                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+                # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+                prompt_arr = train_df
                 x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
-                #  Due to the bell-curved nature of our dataset, we use balanced 
-                #   weight classes to make prediction of minority classes more likely. 
-                model = LogisticRegression(class_weight='balanced',     
+                class_counts = y_train.value_counts()
+                total_samples = len(y_train)
+
+                # Calculate weights inversely proportional to class frequencies
+                class_weights = {
+                    label: total_samples / (len(class_counts) * count) 
+                    for label, count in class_counts.items()
+}
+                model = LogisticRegression(class_weight=class_weights,     
                                         multi_class='multinomial', 
                                         solver=solver_lgreg,
-                                        max_iter=1000)
+                                        max_iter=3000,
+                                        penalty="l1")
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
                 # qwk_score = calculate_qwk(y_test, y_pred, n_classes=5)
                 # print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
+
+                weighted_acc = weighted_accuracy(y_test, y_pred, weights=class_weights)
+                print(f"Weighted Accuracy: {weighted_acc:.4f}")
+
 
                 metrics = evaluate_model(y_pred, y_test)
                 file.write("Evaluation Metrics:\n")
