@@ -408,22 +408,22 @@ def main():
             similarity_scores = np.array(similarity_scores) 
 
             # Drop variables that score not be found from full_text
-            columns_to_drop = [
-                "essay_id",
-                "full_text",
-                "assignment",
-                "prompt_name",
-                # "economically_disadvantaged",
-                # "student_disability_status",
-                # "ell_status",
-                # "race_ethnicity",
-                # "gender",
-                # "grade_level"
-            ]
-            train_df = train_df.drop(columns=columns_to_drop)
+            # columns_to_drop = [
+            #     "essay_id",
+            #     "full_text",
+            #     "assignment",
+            #     "prompt_name",
+            #     # "economically_disadvantaged",
+            #     # "student_disability_status",
+            #     # "ell_status",
+            #     # "race_ethnicity",
+            #     # "gender",
+            #     # "grade_level"
+            # ]
+            # train_df = train_df.drop(columns=columns_to_drop)
             
-            # Stack sim scores and word count
-            prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+            # # Stack sim scores and word count
+            # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
             
 
             df_subset = df[df['prompt_name'] == prompt]
@@ -472,10 +472,10 @@ def main():
                 # x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42)
                 #  Due to the bell-curved nature of our dataset, we use balanced 
                 #   weight classes to make prediction of minority classes more likely. 
-                model = LogisticRegression(class_weight=class_weights,     
+                # model = LogisticRegression(class_weight=class_weights,     
                 # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-                prompt_arr = train_df
-                x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
+                # prompt_arr = train_df
+                # x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
                 class_counts = y_train.value_counts()
                 total_samples = len(y_train)
 
@@ -489,8 +489,7 @@ def main():
                                         solver=solver_lgreg,
                                         max_iter=3000,
                                         penalty="l1")
-                                        max_iter=3000,
-                                        penalty="l1")
+                                        
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
