@@ -36,6 +36,74 @@ stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours',
                 "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan', "shan't", 'shouldn', "shouldn't", 
                 'wasn', "wasn't", 'weren', "weren't", 'won', "won't", 'wouldn', "wouldn't"]
 
+
+def calculate_qwk(y_true, y_pred, n_classes):
+    """
+    Calculate Quadratic Weighted Kappa between true labels and predictions.
+    Handles edge cases and prevents division by zero errors.
+    
+    Parameters:
+    -----------
+    y_true : array-like
+        True labels
+    y_pred : array-like
+        Predicted labels
+    n_classes : int
+        Number of classes in the dataset
+        
+    Returns:
+    --------
+    float
+        Quadratic Weighted Kappa score
+    """
+    # Convert inputs to numpy arrays if they aren't already
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    
+    # Validate inputs
+    if len(y_true) != len(y_pred):
+        raise ValueError("Length of y_true and y_pred must be equal")
+    if len(y_true) == 0:
+        raise ValueError("Arrays cannot be empty")
+    
+    # Create confusion matrix
+    conf_mat = confusion_matrix(y_true, y_pred, 
+                              labels=list(range(n_classes)))
+    
+    # Create weight matrix
+    weights = np.zeros((n_classes, n_classes))
+    for i in range(n_classes):
+        for j in range(n_classes):
+            weights[i,j] = (i-j) ** 2
+    
+    # Calculate row and column sums
+    row_sums = conf_mat.sum(axis=1)
+    col_sums = conf_mat.sum(axis=0)
+    total = np.sum(row_sums)
+    
+    # Handle edge case where total is 0
+    if total == 0:
+        return 0.0
+    
+    # Calculate expected matrix (with safe division)
+    expected = np.outer(row_sums, col_sums) / total
+    
+    # Calculate weighted matrices
+    w_observed = np.sum(weights * conf_mat)
+    w_expected = np.sum(weights * expected)
+    
+    # Calculate denominator safely
+    denominator = np.sum(weights * np.outer(row_sums, row_sums)) / total - w_expected
+    
+    # Handle edge case where denominator is 0
+    if abs(denominator) < 1e-10:  # Using small threshold instead of exact 0
+        return 1.0 if w_observed == w_expected else 0.0
+    
+    # Calculate QWK
+    return 1 - ((w_observed - w_expected) / denominator)
+
+
+
 # Preprocesses text.
 def preprocess_text(text):
     # Convert to lowercase and remove special characters
@@ -211,7 +279,10 @@ def main():
             '''
             if log_reg:
                 print(f"Conducting logistic Regression for prompt: {prompt}")
-                file.write("\n\n--- Logistic Regression Analysis ---\n")
+                file.write("\n--- Logistic Regression Analysis ---\n")
+                # Stack sim scores and word count
+                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+                x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
                 #  Due to the bell-curved nature of our dataset, we use balanced 
                 #   weight classes to make prediction of minority classes more likely. 
                 model = LogisticRegression(class_weight='balanced',     
@@ -220,6 +291,9 @@ def main():
                                         max_iter=1000)
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
+
+                # qwk_score = calculate_qwk(y_test, y_pred, n_classes=5)
+                # print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
 
                 metrics = evaluate_model(y_pred, y_test)
                 file.write("Evaluation Metrics:\n")
