@@ -10,6 +10,9 @@ import re
 from sklearn.preprocessing import LabelEncoder
 import random
 import statistics
+from baseModel import baseModel
+from sklearn.metrics import confusion_matrix
+
 
 
 """ Logistic Regression Analysis"""
@@ -20,6 +23,58 @@ from sklearn.metrics import classification_report
 
 """ K_Nearest Neighbor Analysis"""
 from sklearn.neighbors import KNeighborsClassifier
+
+
+def quadratic_weighted_kappa(y_true, y_pred):
+    """
+    Calculate the quadratic weighted kappa between two sets of ratings.
+    
+    Parameters:
+    y_true (array-like): Array of true ratings (ground truth)
+    y_pred (array-like): Array of predicted ratings
+    
+    Returns:
+    float: The quadratic weighted kappa score
+    """
+    # Convert inputs to numpy arrays
+    y_true = np.array(y_true, dtype=int)
+    y_pred = np.array(y_pred, dtype=int)
+    
+    # Verify inputs are valid (between 1 and 6)
+    if not (np.all(np.isin(y_true, range(1, 7))) and np.all(np.isin(y_pred, range(1, 7)))):
+        raise ValueError("All values must be between 1 and 6")
+    
+    # Calculate confusion matrix
+    conf_mat = confusion_matrix(y_true, y_pred, labels=range(1, 7))
+    
+    # Calculate weights matrix
+    num_classes = 6
+    weights = np.zeros((num_classes, num_classes))
+    for i in range(num_classes):
+        for j in range(num_classes):
+            weights[i, j] = ((i + 1) - (j + 1)) ** 2
+    
+    # Calculate expected matrix
+    row_sum = np.sum(conf_mat, axis=1)
+    col_sum = np.sum(conf_mat, axis=0)
+    expected = np.outer(row_sum, col_sum) / np.sum(row_sum)
+    
+    # Calculate weighted matrices
+    weighted_matrix = weights * conf_mat
+    weighted_expected = weights * expected
+    
+    # Calculate kappa
+    observed = np.sum(weighted_matrix)
+    expected_weighted = np.sum(weighted_expected)
+    total = np.sum(conf_mat)
+    
+    # Handle edge case where all predictions are the same
+    if expected_weighted == 0:
+        return 1.0 if observed == 0 else 0.0
+    
+    kappa = 1 - (observed / expected_weighted)
+    
+    return kappa
 
 
 # Given tokens from preproces_text(), return a list of bigram tuples. 
@@ -122,15 +177,12 @@ def main():
         # print(item)
         # print(df)
         df[item] = le.fit_transform(df[item])
-
-    # print(f"\n{item} mapping:") #prints out what category converted to what integer
-    # for i, label in enumerate(le.classes_):
-    #     print(f"{i} -> {label}")
-
+        # for i, label in enumerate(le.classes_):
+        #     print(f"{i} -> {label}")
 
     prompts = df['prompt_name'].unique()
     prompts.sort()
-    # print(prompts)
+    # baseModel(df, prompts)
 
     '''
     Select Analysis Type
@@ -148,7 +200,7 @@ def main():
     n = 1000 # Number of top bi grams to consider
     
     test_size = 0.2 # % of data set to be used to train per prompt
-    solver_lgreg = 'saga'
+    solver_lgreg = 'newton-cg'
 
     knnmetric = 'euclidean'
 
@@ -200,14 +252,16 @@ def main():
             y = df_subset['score']
             x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42, stratify=y)
 
+
+            
+
+            
+
+
             class_counts = y_train.value_counts()
             total_samples = len(y_train)
 
-            # Calculate weights inversely proportional to class frequencies
-            # class_weights = {
-            #     label: total_samples / (len(class_counts) * count) 
-            #     for label, count in class_counts.items()
-            # }
+        
             # Custom exponential weighting
 
             class_weights = {
@@ -215,10 +269,7 @@ def main():
                 for label, count in class_counts.items()
             }
 
-            # class_weights = {
-            #     label: np.sqrt(total_samples/(count))
-            #     for label, count in class_counts.items()
-            # }
+          
             '''
             Bell Curve Analysis and performance
             '''
@@ -244,36 +295,20 @@ def main():
                 print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 # Stack sim scores and word count
-                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-                # X = df.drop('score', axis=1)
-                # y = df['score']
-                # x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42)
-                #  Due to the bell-curved nature of our dataset, we use balanced 
-                #   weight classes to make prediction of minority classes more likely. 
-                # model = LogisticRegression(class_weight=class_weights,     
-                # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-                # prompt_arr = train_df
-                # x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
-                # class_counts = y_train.value_counts()
-                # total_samples = len(y_train)
-
-                # # Calculate weights inversely proportional to class frequencies
-                # class_weights = {
-                #     label: total_samples / (len(class_counts) * count) 
-                #     for label, count in class_counts.items()
-                # }
+           
                 model = LogisticRegression(class_weight=class_weights,     
                                         multi_class='multinomial', 
-                                        solver=solver_lgreg,
+                                        solver='newton-cg',
                                         max_iter=3000,
-                                        penalty="l2")
+                                        penalty=None,
+                                        random_state=2024)
                                         
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
 
-                # qwk_score = calculate_qwk(y_test, y_pred, n_classes=7)
-                # print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
+                qwk_score = quadratic_weighted_kappa(y_test, y_pred)
+                print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
 
 
                 weighted_acc = weighted_accuracy(y_test, y_pred, weights=class_weights)
