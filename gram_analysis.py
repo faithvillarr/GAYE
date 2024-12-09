@@ -2,9 +2,19 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 from nltk.tokenize import word_tokenize
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import re
+
+""" Logistic Regression Analysis"""
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+
+
+""" K_Nearest Neighbor Analysis"""
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import confusion_matrix
+
 
 stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 
                 'ourselves', 'you', "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 
@@ -82,12 +92,6 @@ def assign_grades_on_bell_curve(similarity_scores: np.array, alambda = 1):
     
     return grades
 
-""" Logistic Regression Analysis"""
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
-
-
 # Calculate evaluation metrics by comparing predicted vs actual grades.
 def evaluate_model(predicted_grades, actual_grades):
     accuracy = accuracy_score(actual_grades, predicted_grades)
@@ -116,7 +120,8 @@ def main():
     Select Analysis Type
     '''
     bell_curve = False
-    log_reg = True
+    log_reg = False
+    kNear = True
     embedding = False
     neural_net = False
 
@@ -129,6 +134,8 @@ def main():
     test_size = 0.2 # % of data set to be used to train per prompt
     solver_lgreg = 'saga'
 
+    knnmetric = 'euclidean'
+
     with open("results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
 
         for prompt in prompts[pd.notna(prompts)]:
@@ -137,7 +144,7 @@ def main():
             train_df = df[df['prompt_name'] == prompt].copy()
 
             # Extract top 1000 bigrams from all essays
-            top_bigrams = extract_top_bigrams(train_df['full_text'], n=1000)
+            top_bigrams = extract_top_bigrams(train_df['full_text'], n=n)
             
             # Calculate similarity scores for test data
             similarity_scores = []
@@ -150,6 +157,9 @@ def main():
             # converting to np array for them juicy easy functions. thank go for numpy
             similarity_scores = np.array(similarity_scores) 
             
+            # Stack sim scores and word count
+            prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+            x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
             '''
             Bell Curve Analysis and performance
             '''
@@ -172,9 +182,6 @@ def main():
             '''
             if log_reg:
                 file.write("\n--- Logistic Regression Analysis ---\n")
-                # Stack sim scores and word count
-                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-                x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
                 #  Due to the bell-curved nature of our dataset, we use balanced 
                 #   weight classes to make prediction of minority classes more likely. 
                 model = LogisticRegression(class_weight='balanced',     
@@ -194,6 +201,16 @@ def main():
                 # Classification report
                 file.write("Classification Report:")
                 file.write(classification_report(y_test, y_pred))
+            '''
+            K-Nearest Neighbors
+            '''
+            if kNear:
+                file.write("\n--- K Nearest Neighbor Analysis ---\n")
+                knn = KNeighborsClassifier(n_neighbors=6, metric=knnmetric)
+                knn.fit(x_train, y_train)
+                y_pred = knn.predict(x_test)
+                # print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+                file.write(f"\nClassification Report:\n {classification_report(y_test, y_pred)}")
 
 
 
