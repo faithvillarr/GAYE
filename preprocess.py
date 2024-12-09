@@ -1,4 +1,5 @@
 from nltk.tokenize import word_tokenize
+import nltk
 import re
 import random
 import statistics
@@ -26,6 +27,7 @@ stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours',
                 'hadn', "hadn't", 'hasn', "hasn't", 'haven', "haven't", 'isn', "isn't", 'ma', 'mightn',
                 "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan', "shan't", 'shouldn', "shouldn't", 
                 'wasn', "wasn't", 'weren', "weren't", 'won', "won't", 'wouldn', "wouldn't"]
+
 def addFeatures(df):
     
     connectives =  [
@@ -226,12 +228,26 @@ def calculate_qwk(y_true, y_pred, n_classes):
     return 1 - ((w_observed - w_expected) / denominator)
 
 # Preprocesses text.
-def preprocess_text(text):
+def preprocess_text(text, NAV = False):
     # Convert to lowercase and remove special characters
     text = re.sub(r'[^\w\s]', '', str(text).lower())
     
     # Tokenize and remove stopwords
     tokens = word_tokenize(text)
     tokens = [token for token in tokens if token not in stop_words]
-    
+
+    # Only process words that are nouns, verbs and adjectives
+    if NAV:
+        tagged = nltk.pos_tag(tokens)
+        tags_to_keep = ['FW', 'JJ', 'JJR', 'JJS', 'NN', 'NNS', 'NP', 'NPS', 'RB', 'RBR', 'RBS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']
+        tokens = [word for word, tag in tagged if tag in tags_to_keep]
+
     return tokens
+
+def main():
+    temp = preprocess_text("The Dice coefficient has several advantages over other similarity metrics. It is particularly useful for imbalanced datasets, where one set may be much larger than the other. It is a better choice for image segmentation tasks, as it is more sensitive to overlap between the predicted and ground truth masks. This is achieved by treating the segmentation masks as sets of pixels. The predicted segmentation and the ground truth segmentation are both represented as binary masks, where a pixel is either part of the segmented object or not.", 
+                    NAV = True)
+    print(temp)
+
+if __name__ == "__main__":
+    main()
