@@ -3,111 +3,21 @@ warnings.filterwarnings('ignore')
 
 import pandas as pd
 import numpy as np
-from collections import Counter
-from nltk.tokenize import word_tokenize
-from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
-import re
+from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
-import random
-import statistics
-
 
 """ Logistic Regression Analysis"""
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
-
 
 """ K_Nearest Neighbor Analysis"""
 from sklearn.neighbors import KNeighborsClassifier
 
+""" Functions from Other Files"""
+from preprocess import fill_nan, preprocess_text
+from gram_analysis import extract_top_bigrams, get_bigrams, calculate_similarity_score, evaluate_model, assign_grades_on_bell_curve, weighted_accuracy
 
-# Given tokens from preproces_text(), return a list of bigram tuples. 
-def get_bigrams(tokens):
-    return [(tokens[i], tokens[i+1]) for i in range(0, len(tokens)-1)]
-
-# Given tokens from preproces_text(), return a list of trigram tuples. 
-def get_trigrams(tokens):
-    return [(tokens[i], tokens[i+1], tokens[i+2]) for i in range(0, len(tokens)-2)]
-
-# Extracts the top n most common bigrams from all essays.
-# Returns a list of bigram tuples.
-def extract_top_bigrams(essays, n=1000):
-    all_bigrams = []
-    for essay in essays:
-        tokens = preprocess_text(essay)
-        bigrams = get_bigrams(tokens)
-        all_bigrams.extend(bigrams)
-    
-    # Count and get top n bigrams
-    bigram_counts = Counter(all_bigrams)
-    return [bigram for bigram, count in bigram_counts.most_common(n)]
-
-# Calculates similarity score between essay and top bigrams encountered. 
-def calculate_similarity_score(essay_bigrams, top_bigrams):
-    common_bigrams = set(essay_bigrams).intersection(set(top_bigrams))
-    similarity = len(common_bigrams) / len(top_bigrams) if top_bigrams else 0
-    return similarity
-
-
-""" Bell Curve Analysis """
-# Assigns grades (1-5) based on similarity scores (np.array) using a bell curve.
-def assign_grades_on_bell_curve(similarity_scores: np.array, alambda = 1):
-    
-    # Calculate mean, standard deviation and z-score for bell curve. 
-    mean = np.mean(similarity_scores)
-    std = np.mean(similarity_scores)
-    z_scores = (similarity_scores - mean) / (std * alambda)
-    
-    # Assign letter grades based on z-scores
-    grades = np.empty(len(z_scores), dtype=int)
-    grades[z_scores >= 2.0] = 6
-    grades[(z_scores >= 1.5) & (z_scores < 2.0)] = 5
-    grades[(z_scores >= 0.5) & (z_scores < 1.5)] = 4
-    grades[(z_scores >= -0.5) & (z_scores < 0.5)] = 3
-    grades[(z_scores >= -1.5) & (z_scores < -0.5)] = 2
-    grades[z_scores < -1.5] = 1
-    
-    return grades
-
-# Calculate evaluation metrics by comparing predicted vs actual grades.
-def evaluate_model(predicted_grades, actual_grades):
-    accuracy = accuracy_score(actual_grades, predicted_grades)
-    precision = precision_score(actual_grades, predicted_grades, average='weighted')
-    recall = recall_score(actual_grades, predicted_grades, average='weighted')
-    f1 = f1_score(actual_grades, predicted_grades, average='weighted')
-    
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1
-    }
-
-def write_results_to_file(prompt_name, metrics, grade_dist_df):
-    # need to write 
-    return 
-
-def weighted_accuracy(y_true, y_pred, weights=None):
-
-    # If no weights provided, use uniform weights
-    if weights is None:
-        return accuracy_score(y_true, y_pred)
-    
-    # Convert to numpy arrays
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-    
-    # Create weight array matching the true labels
-    sample_weights = np.array([weights[label] for label in y_true])
-    
-    # Calculate weighted accuracy
-    correct = (y_true == y_pred)
-    return np.sum(correct * sample_weights) / np.sum(sample_weights)
-
-from datetime import datetime
-from preprocess import preprocess_text, fill_nan
-
+import datetime as datetime
 def main():
     # df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
     df = pd.read_csv("FeaturesAdded.csv")
