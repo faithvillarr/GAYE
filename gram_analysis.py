@@ -6,9 +6,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import re
 
-
-import nltk
-nltk.download('punkt_tab')
 stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 
                 'ourselves', 'you', "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 
                 'yourselves', 'he', 'him', 'his', 'himself', 'she', "she's", 'her', 'hers', 'herself', 
@@ -64,6 +61,8 @@ def calculate_similarity_score(essay_bigrams, top_bigrams):
     similarity = len(common_bigrams) / len(top_bigrams) if top_bigrams else 0
     return similarity
 
+
+""" Bell Curve Analysis """
 # Assigns grades (1-5) based on similarity scores (np.array) using a bell curve.
 def assign_grades_on_bell_curve(similarity_scores: np.array, alambda = 1):
     
@@ -83,6 +82,12 @@ def assign_grades_on_bell_curve(similarity_scores: np.array, alambda = 1):
     
     return grades
 
+""" Logistic Regression Analysis"""
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+
+
 # Calculate evaluation metrics by comparing predicted vs actual grades.
 def evaluate_model(predicted_grades, actual_grades):
     accuracy = accuracy_score(actual_grades, predicted_grades)
@@ -101,55 +106,95 @@ def write_results_to_file(prompt_name, metrics, grade_dist_df):
     # need to write 
     return 
 
+from datetime import datetime
 def main():
     df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
 
     prompts = df['prompt_name'].unique()
 
     '''
+    Select Analysis Type
+    '''
+    bell_curve = False
+    log_reg = True
+    embedding = False
+    neural_net = False
+
+    '''
     Hyper parameters to experiment with:
     '''
     alambda = 1 # Strengthen or weakens std dev when calculating z-scores.
     n = 1000 # Number of top bi grams to consider
+    
+    test_size = 0.2 # % of data set to be used to train per prompt
+    solver_lgreg = 'saga'
 
-    for prompt in prompts:
-        print(f'\nAnalyzing prompt: {prompt}')
+    with open("results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
 
-        train_df = df[df['prompt_name'] == prompt].copy()
+        for prompt in prompts[pd.notna(prompts)]:
+            file.write(f'\nAnalyzing prompt: {prompt}')
 
-        # Extract top 1000 bigrams from all essays
-        top_bigrams = extract_top_bigrams(train_df['full_text'], n=1000)
-        
-               # Calculate similarity scores for test data
-        similarity_scores = []
-        for essay in train_df['full_text']:
-            tokens = preprocess_text(essay)
-            essay_bigrams = get_bigrams(tokens)
-            similarity = calculate_similarity_score(essay_bigrams, top_bigrams)
-            similarity_scores.append(similarity)
-        
-        similarity_scores = np.array(similarity_scores)
-        
-        # Assign and evaluate grades
-        predicted_grades = assign_grades_on_bell_curve(similarity_scores, alambda)
-        actual_grades = train_df['score'].values
-        
-        # Calculate metrics
-        metrics = evaluate_model(predicted_grades, actual_grades)
-        
-        # Print results
-        print("Evaluation Metrics:")
-        for metric, value in metrics.items():
-            print(f"{metric}: {value:.4f}")
-        
-        # Print grade distribution
-        print("\nGrade Distribution:")
-        grade_dist = print(pd.DataFrame({
-            'Predicted': pd.Series(predicted_grades).value_counts().sort_index(),
-            'Actual': pd.Series(actual_grades).value_counts().sort_index()
-        }))
+            train_df = df[df['prompt_name'] == prompt].copy()
 
-        # write_results_to_file(prompt, metrics, grade_dist)
+            # Extract top 1000 bigrams from all essays
+            top_bigrams = extract_top_bigrams(train_df['full_text'], n=1000)
+            
+            # Calculate similarity scores for test data
+            similarity_scores = []
+            for essay in train_df['full_text']:
+                tokens = preprocess_text(essay)
+                essay_bigrams = get_bigrams(tokens)
+                similarity = calculate_similarity_score(essay_bigrams, top_bigrams)
+                similarity_scores.append(similarity)
+            
+            # converting to np array for them juicy easy functions. thank go for numpy
+            similarity_scores = np.array(similarity_scores) 
+            
+            '''
+            Bell Curve Analysis and performance
+            '''
+            if bell_curve: 
+                print("\n\n--- Bell Curve Analysis ---\n")
+                predicted_grades = assign_grades_on_bell_curve(similarity_scores, alambda)
+                actual_grades = train_df['score'].values
+
+                metrics = evaluate_model(predicted_grades, actual_grades)
+                print("Evaluation Metrics:")
+                for metric, value in metrics.items():
+                    print(f"{metric}: {value:.4f}")
+                print("\nGrade Distribution:")
+                print(pd.DataFrame({
+                    'Predicted': pd.Series(predicted_grades).value_counts().sort_index(),
+                    'Actual': pd.Series(actual_grades).value_counts().sort_index()
+                }))
+            '''
+            Linear Regression Model
+            '''
+            if log_reg:
+                file.write("\n--- Logistic Regression Analysis ---\n")
+                # Stack sim scores and word count
+                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
+                x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
+                #  Due to the bell-curved nature of our dataset, we use balanced 
+                #   weight classes to make prediction of minority classes more likely. 
+                model = LogisticRegression(class_weight='balanced',     
+                                        multi_class='multinomial', 
+                                        solver=solver_lgreg,
+                                        max_iter=1000)
+                model.fit(x_train, y_train)
+                y_pred = model.predict(x_test)
+
+                probabilities = model.predict_proba(x_test)
+                file.write(f"Class Probabilities:\n{probabilities[:5]}")
+
+                # Evaluate accuracy
+                accuracy = accuracy_score(y_test, y_pred)
+                file.write(f"Accuracy: {accuracy}")
+
+                # Classification report
+                file.write("Classification Report:")
+                file.write(classification_report(y_test, y_pred))
+
 
 
 if __name__ == "__main__":
