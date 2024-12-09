@@ -142,7 +142,7 @@ def main():
     with open("results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
 
         for prompt in prompts[pd.notna(prompts)]:
-            file.write(f'\n==============\nAnalyzing prompt: {prompt}==============')
+            file.write(f'\n==============\nAnalyzing prompt: {prompt}\n==============')
 
             train_df = df[df['prompt_name'] == prompt].copy()
 
@@ -211,7 +211,7 @@ def main():
             '''
             if log_reg:
                 print(f"Conducting logistic Regression for prompt: {prompt}")
-                file.write("\n--- Logistic Regression Analysis ---\n")
+                file.write("\n\n--- Logistic Regression Analysis ---\n")
                 #  Due to the bell-curved nature of our dataset, we use balanced 
                 #   weight classes to make prediction of minority classes more likely. 
                 model = LogisticRegression(class_weight='balanced',     
@@ -247,7 +247,7 @@ def main():
             '''
             if kNear:
                 print(f"Conducting k-nearest neighbor analysis for prompt: {prompt}")
-                file.write("\n--- K Nearest Neighbor Analysis ---\n")
+                file.write("\n\n--- K Nearest Neighbor Analysis ---\n")
                 knn = KNeighborsClassifier(n_neighbors=6, metric=knnmetric)
                 knn.fit(x_train, y_train)
                 y_pred = knn.predict(x_test)
