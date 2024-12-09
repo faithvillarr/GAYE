@@ -385,7 +385,7 @@ def main():
 
     knnmetric = 'euclidean'
 
-    with open("results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
+    with open("results/results " + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")) + ".txt", 'a') as file:
 
         for prompt in prompts[pd.notna(prompts)]:
             file.write(f'\n==============\nAnalyzing prompt: {prompt}\n==============')
@@ -437,10 +437,21 @@ def main():
             total_samples = len(y_train)
 
             # Calculate weights inversely proportional to class frequencies
+            # class_weights = {
+            #     label: total_samples / (len(class_counts) * count) 
+            #     for label, count in class_counts.items()
+            # }
+            # Custom exponential weighting
+
             class_weights = {
-                label: total_samples / (len(class_counts) * count) 
+                label: np.exp(-count/total_samples) 
                 for label, count in class_counts.items()
             }
+
+            # class_weights = {
+            #     label: np.sqrt(total_samples/(count))
+            #     for label, count in class_counts.items()
+            # }
             '''
             Bell Curve Analysis and performance
             '''
@@ -476,19 +487,19 @@ def main():
                 # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
                 # prompt_arr = train_df
                 # x_train, x_test, y_train, y_test = train_test_split(prompt_arr, train_df['score'], test_size=test_size, random_state=42)
-                class_counts = y_train.value_counts()
-                total_samples = len(y_train)
+                # class_counts = y_train.value_counts()
+                # total_samples = len(y_train)
 
-                # Calculate weights inversely proportional to class frequencies
-                class_weights = {
-                    label: total_samples / (len(class_counts) * count) 
-                    for label, count in class_counts.items()
-}
+                # # Calculate weights inversely proportional to class frequencies
+                # class_weights = {
+                #     label: total_samples / (len(class_counts) * count) 
+                #     for label, count in class_counts.items()
+                # }
                 model = LogisticRegression(class_weight=class_weights,     
                                         multi_class='multinomial', 
                                         solver=solver_lgreg,
                                         max_iter=3000,
-                                        penalty="l1")
+                                        penalty="l2")
                                         
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
