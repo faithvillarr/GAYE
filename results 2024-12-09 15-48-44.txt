@@ -1,4 +1,0 @@
-
-==============
-Analyzing prompt: Exploring Venus==============
---- Logistic Regression Analysis ---
