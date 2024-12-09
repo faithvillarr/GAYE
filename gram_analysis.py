@@ -32,10 +32,10 @@ def get_trigrams(tokens):
 
 # Extracts the top n most common bigrams from all essays.
 # Returns a list of bigram tuples.
-def extract_top_bigrams(essays, n=1000):
+def extract_top_bigrams(essays, n=1000, NAV = False):
     all_bigrams = []
     for essay in essays:
-        tokens = preprocess_text(essay)
+        tokens = preprocess_text(essay, NAV)
         bigrams = get_bigrams(tokens)
         all_bigrams.extend(bigrams)
     
