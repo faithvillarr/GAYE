@@ -164,10 +164,11 @@ from datetime import datetime
 from preprocess import preprocess_text, fill_nan
 
 def main():
-    # df = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
+    dfBASE = pd.read_csv("ASAP2_competitiondf_with-metadata_TheLearningExchange-trainonly.csv")
     df = pd.read_csv("FeaturesAdded.csv")
     print(f"There are {df.isna().any(axis=1).sum()} rows with nan")
     df = fill_nan(df)
+    dfBASE = fill_nan(dfBASE)
 
     le = LabelEncoder() #encodes the target variable
 
@@ -177,12 +178,13 @@ def main():
         # print(item)
         # print(df)
         df[item] = le.fit_transform(df[item])
+        dfBASE[item] = le.fit_transform(dfBASE[item])
         # for i, label in enumerate(le.classes_):
         #     print(f"{i} -> {label}")
 
     prompts = df['prompt_name'].unique()
     prompts.sort()
-    # baseModel(df, prompts)
+    baseModel(dfBASE, prompts)
 
     '''
     Select Analysis Type
@@ -301,7 +303,7 @@ def main():
                                         solver='newton-cg',
                                         max_iter=3000,
                                         penalty=None,
-                                        random_state=2024)
+                                        random_state=7362)
                                         
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)

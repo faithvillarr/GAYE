@@ -143,7 +143,7 @@ def baseModel(df, prompts):
                                         solver="newton-cg",
                                         max_iter=3000,
                                         penalty=None,
-                                        random_state=42)
+                                        random_state=7362)
                                         
         model.fit(x_train, y_train)
         y_pred = model.predict(x_test)
