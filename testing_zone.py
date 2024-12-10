@@ -15,9 +15,9 @@ from sklearn.neighbors import KNeighborsClassifier
 
 """ Functions from Other Files"""
 from preprocess import fill_nan, preprocess_text
-from gram_analysis import extract_top_bigrams, get_bigrams, calculate_similarity_score, evaluate_model, assign_grades_on_bell_curve, weighted_accuracy
+from gram_analysis import extract_top_bigrams, get_bigrams, calculate_similarity_score, evaluate_model, assign_grades_on_bell_curve, weighted_accuracy, quadratic_weighted_kappa
 
-import datetime as datetime
+from datetime import datetime
 
 
 '''
@@ -41,8 +41,6 @@ def main():
     toEncode = ['assignment', 'prompt_name', "economically_disadvantaged", 'student_disability_status', 'ell_status', 'race_ethnicity', 'gender'] 
 
     for item in toEncode:
-        # print(item)
-        # print(df)
         df[item] = le.fit_transform(df[item])
 
 
@@ -66,7 +64,7 @@ def main():
     n = 1000 # Number of top bi grams to consider
     
     test_size = 0.2 # % of data set to be used to train per prompt
-    solver_lgreg = 'saga'
+    solver_lgreg = 'newton-cg'
 
     knnmetric = 'euclidean'
 
@@ -77,60 +75,86 @@ def main():
 
             train_df = df[df['prompt_name'] == prompt].copy()
 
-            
+            """ TOP 1000 NOUN-ADJ-VERB BIGRAM SIM SCORES"""
+
+            # Extract top 1000 NAV bigrams from all essays
+            top_nav_bigrams = extract_top_bigrams(train_df['full_text'], n=n, NAV=True)
+
+            nav_sim_scores = []
+            for essay in train_df['full_text']:
+                tokens = preprocess_text(essay, NAV=True)
+                essay_bigrams = get_bigrams(tokens)
+                similarity = calculate_similarity_score(essay_bigrams, top_nav_bigrams)
+                nav_sim_scores.append(similarity)
+
+            """ DICE SIMILARITY COEFFICIENT """
+            def dice_similarity(set1, set2):
+                set1 = set(set1)
+                set2 = set(set2)
+                intersection = set1 & set2
+                return 2 * len(intersection) / (len(set1) + len(set2))
+
+            """ JACCARD SIMILARITY COEFFICIENT """
+            def jaccard_similarity(set1, set2):
+                set1 = set(set1)
+                set2 = set(set2)
+                intersection = set1 & set2
+                union = set1 | set2
+                return len(intersection) / len(union)
+
             """ TOP 1000 BIGRAM SIM SCORES"""
             # Extract top 1000 bigrams from all essays
             top_bigrams = extract_top_bigrams(train_df['full_text'], n=n, NAV=False)
 
             # Calculate similarity scores for test data from top 1000 bigrams
             similarity_scores = []
+            dice_sim_score = []
+            jaccard_sim_score = []
             for essay in train_df['full_text']:
                 tokens = preprocess_text(essay, NAV=False)
                 essay_bigrams = get_bigrams(tokens)
+
                 similarity = calculate_similarity_score(essay_bigrams, top_bigrams)
                 similarity_scores.append(similarity)
+
+                similarity = dice_similarity(essay_bigrams, top_bigrams)
+                dice_sim_score.append(similarity)
+
+                similarity = jaccard_similarity(essay_bigrams, top_bigrams)
+                jaccard_sim_score.append(similarity)
             
             # converting to np array for them juicy easy functions. thank god for numpy
             similarity_scores = np.array(similarity_scores) 
-
-            """ TOP 1000 NOUN-ADJ-VERB BIGRAM SIM SCORES"""
-
-            # Extract top 1000 NAV bigrams from all essays
-            top_bigrams = extract_top_bigrams(train_df['full_text'], n=n, NAV=False)
-
-            nav_sim_scores = []
-            for essay in train_df['full_text']:
-                tokens = preprocess_text(essay, NAV=True)
-                essay_bigrams = get_bigrams(tokens)
-                similarity = calculate_similarity_score(essay_bigrams, top_bigrams)
-                nav_sim_scores.append(similarity)
-
+            dice_sim_score = np.array(dice_sim_score) 
+            jaccard_sim_score = np.array(jaccard_sim_score) 
             nav_sim_scores = np.array(nav_sim_scores)
 
-            # Drop variables that score not be found from full_text
-            # columns_to_drop = [
-            #     "essay_id",
-            #     "full_text",
-            #     "assignment",
-            #     "prompt_name",
-            #     # "economically_disadvantaged",
-            #     # "student_disability_status",
-            #     # "ell_status",
-            #     # "race_ethnicity",
-            #     # "gender",
-            #     # "grade_level"
-            # ]
-            # train_df = train_df.drop(columns=columns_to_drop)
+            # print(similarity_scores.shape, 
+            #       dice_sim_score.shape,
+            #       jaccard_sim_score.shape,
+            #       nav_sim_scores.shape,
+            #       train_df.shape,
+            #       )
             
-            # # Stack sim scores and word count
-            # prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
-            
-
-            df_subset = df[df['prompt_name'] == prompt]
+            # train_df = df[df['prompt_name'] == prompt].copy()
 
             # Then create X and y from the subset
-            X = df_subset.drop(['essay_id', 'score', 'full_text'], axis=1)
-            y = df_subset['score']
+            X = train_df.drop(['essay_id', 'score', 'full_text', 'similarity_score', 
+                                'assignment', 'prompt_name', 'economically_disadvantaged',
+                                'student_disability_status', 'ell_status', 'race_ethnicity', 
+                                'gender', 'grade_level',], axis=1)
+            y = train_df['score']
+            
+            # print(pd.DataFrame(X).columns)
+            """ Add whichever sim scores"""
+            X = np.array(X)
+            # print(X.shape)
+            X = np.column_stack((X, similarity_scores))
+            X = np.column_stack((X, nav_sim_scores))
+            X = np.column_stack((X, dice_sim_score))
+            X = np.column_stack((X, jaccard_sim_score))
+            # print(X.shape)
+            
             x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42, stratify=y)
 
             class_counts = y_train.value_counts()
@@ -177,7 +201,6 @@ def main():
                 print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 # Stack sim scores and word count
-                prompt_arr = np.column_stack((similarity_scores, np.array(train_df['essay_word_count'])))
                 
                 model = LogisticRegression(class_weight=class_weights,     
                                         multi_class='multinomial', 
@@ -187,6 +210,11 @@ def main():
                                         
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
+
+
+                qwk_score = quadratic_weighted_kappa(y_test, y_pred)
+                print(f"Quadratic Weighted Kappa Score: {qwk_score:.4f}")
+
 
                 weighted_acc = weighted_accuracy(y_test, y_pred, weights=class_weights)
                 print(f"Weighted Accuracy: {weighted_acc:.4f}")
