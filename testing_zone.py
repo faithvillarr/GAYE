@@ -15,7 +15,7 @@ from sklearn.neighbors import KNeighborsClassifier
 
 """ Functions from Other Files"""
 from preprocess import fill_nan, preprocess_text
-from gram_analysis import extract_top_bigrams, get_bigrams, calculate_similarity_score, evaluate_model, assign_grades_on_bell_curve, weighted_accuracy, quadratic_weighted_kappa
+from gram_analysis import extract_top_bigrams, get_bigrams, calculate_similarity_score, evaluate_model, assign_grades_on_bell_curve, weighted_accuracy, quadratic_weighted_kappa, calculate_tfidf_score
 
 from datetime import datetime
 
@@ -110,6 +110,7 @@ def main():
             similarity_scores = []
             dice_sim_score = []
             jaccard_sim_score = []
+            tfidf_scores = []
             for essay in train_df['full_text']:
                 tokens = preprocess_text(essay, NAV=False)
                 essay_bigrams = get_bigrams(tokens)
@@ -122,12 +123,17 @@ def main():
 
                 similarity = jaccard_similarity(essay_bigrams, top_bigrams)
                 jaccard_sim_score.append(similarity)
+
+                prompt_tokens = preprocess_text(prompt, NAV = False)
+                tfidf = calculate_tfidf_score(tokens, prompt_tokens)
+                tfidf_scores.append(tfidf)
             
             # converting to np array for them juicy easy functions. thank god for numpy
             similarity_scores = np.array(similarity_scores) 
-            dice_sim_score = np.array(dice_sim_score) 
+            dice_sim_score =    np.array(dice_sim_score) 
             jaccard_sim_score = np.array(jaccard_sim_score) 
-            nav_sim_scores = np.array(nav_sim_scores)
+            nav_sim_scores =    np.array(nav_sim_scores)
+            tfidf_scores =      np.array(tfidf_scores)
 
             # print(similarity_scores.shape, 
             #       dice_sim_score.shape,
@@ -153,9 +159,10 @@ def main():
             X = np.column_stack((X, nav_sim_scores))
             X = np.column_stack((X, dice_sim_score))
             X = np.column_stack((X, jaccard_sim_score))
+            X = np.column_stack((X, tfidf_scores))
             # print(X.shape)
             
-            x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=42, stratify=y)
+            x_train, x_test, y_train, y_test = train_test_split(X,y, test_size=test_size, random_state=7362, stratify=y)
 
             class_counts = y_train.value_counts()
             total_samples = len(y_train)

@@ -100,10 +100,21 @@ def extract_top_bigrams(essays, n=1000, NAV = False):
 
 # Calculates similarity score between essay and top bigrams encountered. 
 def calculate_similarity_score(essay_bigrams, top_bigrams):
+    # Weighs repitition.
+    total_count = 0
+    for bi in top_bigrams:
+        count = sum (1 for essay_bigram in essay_bigrams if essay_bigram == bi)
+        total_count += count
+
+    return total_count / len(top_bigrams) if top_bigrams else 0
+
+    # This doesnt count for repitition.
     common_bigrams = set(essay_bigrams).intersection(set(top_bigrams))
     similarity = len(common_bigrams) / len(top_bigrams) if top_bigrams else 0
     return similarity
 
+def calculate_tfidf_score(essay_tokens, prompt_tokens):
+    return 1
 
 """ Bell Curve Analysis """
 # Assigns grades (1-5) based on similarity scores (np.array) using a bell curve.
