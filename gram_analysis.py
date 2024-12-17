@@ -295,7 +295,6 @@ def main():
                 print(f"Conducting logistic Regression for prompt: {prompt}")
                 file.write("\n--- Logistic Regression Analysis ---\n")
                 # Stack sim scores and word count
-           
                 model = LogisticRegression(class_weight=class_weights,     
                                         multi_class='multinomial', 
                                         solver='newton-cg',
@@ -303,6 +302,7 @@ def main():
                                         penalty=None,
                                         random_state=2024)
                                         
+           
                 model.fit(x_train, y_train)
                 y_pred = model.predict(x_test)
 
