@@ -1,5 +1,4 @@
-# GAYE
-Grading Automatically: YOUR ESSAY!
+# Automatic Essay Grader
 
 The coolest program for only the coolest people. 
 
